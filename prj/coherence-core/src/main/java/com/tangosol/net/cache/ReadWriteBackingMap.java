@@ -7629,6 +7629,10 @@ public class ReadWriteBackingMap
                         mapControl.unlock(binKey);
                         }
                     }
+                else
+                    {
+                    log("**MG** onNext failed to replace " + getContext().isKeyOwned(binKey));
+                    }
                 }
 
             /**
