@@ -1763,6 +1763,11 @@ public class ReadWriteBackingMapTests
             }
         finally
             {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+
             cache.destroy();
             }
         }
@@ -1873,6 +1878,10 @@ public class ReadWriteBackingMapTests
             }
         finally
             {
+            if (nbStore != null)
+                {
+                nbStore.shutdownExecutorService();
+                }
             cache.destroy();
             }
         }
