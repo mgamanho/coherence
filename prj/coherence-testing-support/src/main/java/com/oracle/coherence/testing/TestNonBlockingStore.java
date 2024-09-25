@@ -74,6 +74,14 @@ public class TestNonBlockingStore<K, V>
         return m_executorService;
         }
 
+    public void shutdownExecutorService()
+        {
+        if (m_executorService != null)
+            {
+            m_executorService.shutdown();
+            }
+        }
+            
     /**
      * Load the value from the underlying store and update the specified entry
      * by calling the <tt>onNext</tt> method of the provided
