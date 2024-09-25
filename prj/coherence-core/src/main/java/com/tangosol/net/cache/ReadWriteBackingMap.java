@@ -7621,7 +7621,11 @@ public class ReadWriteBackingMap
 
                 log("**MG** onNext here(2)");
 
-                if (getContext().isKeyOwned(binKey) && mapControl.lock(binKey, 100L))
+                boolean fOwned = getContext().isKeyOwned(binKey);
+                    log("**MG** onNext here(3) " + fOwned);
+                boolean fLocked = mapControl.lock(binKey, 100L);
+                    log("**MG** onNext here(4) " + fLocked);
+                if (fOwned && fLocked)
                     {
                     try
                         {
