@@ -313,10 +313,12 @@ public class TestNonBlockingStore<K, V>
                         }
                     }
 
+                log("**MG** store thread[" + Thread.currentThread().getName() + "] delay duration: " + getDurationStore());
                 delay(getDurationStore());
                 getStorageMap().put(oKey, oValue);
                 getProcessor().process(binEntry);
                 delay(200);
+                log("**MG** store thread[" + Thread.currentThread().getName() + "] calling onNext");
                 observer.onNext(binEntry);
                 });
         }
