@@ -5851,6 +5851,7 @@ public class ReadWriteBackingMap
             Binary        binKey      = entry.getBinaryKey();
             boolean       fSync       = getWriteQueue() == null;
 
+            log("**MG** replace(1)");
             // Ensure that the key is owned and the entry is locked before doing
             // the replace operation.  Write-through or non-blocking operations
             // are guaranteed to have the entry locked and partition pinned.
@@ -5864,9 +5865,11 @@ public class ReadWriteBackingMap
                 {
                 try
                     {
+            log("**MG** replace(2)");
                     Binary binValue = entry.getBinaryValue();
                     if (Base.equals(binValue, mapInternal.get(binKey)))
                         {
+            log("**MG** replace(3)");
                         if (entry.isChanged())
                             {
                             // the store operation changed the value; replace
@@ -5927,6 +5930,7 @@ public class ReadWriteBackingMap
                 }
             else
                 {
+            log("**MG** replace not own or could not lock");
                 // Either we failed to lock the entry (indicating that another
                 // [service/worker] thread is working on it) or we no longer own
                 // the partition; don't replace the value.  If this method is called
