@@ -7609,11 +7609,17 @@ public class ReadWriteBackingMap
             */
             public void onNext(BinaryEntry binEntry)
                 {
+                log("**MG** onNext beginning");
+
                 Entry         entry      = (Entry) binEntry;
                 ConcurrentMap mapControl = getControlMap();
                 Object        binKey     = binEntry.getBinaryKey();
 
+                log("**MG** onNext here(1)");
+
                 f_counterProcessed.incrementAndGet();
+
+                log("**MG** onNext here(2)");
 
                 if (getContext().isKeyOwned(binKey) && mapControl.lock(binKey, 100L))
                     {
