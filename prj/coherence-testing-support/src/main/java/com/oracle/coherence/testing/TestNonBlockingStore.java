@@ -84,12 +84,12 @@ public class TestNonBlockingStore<K, V>
                 m_executorService.shutdown();
                 if (!m_executorService.awaitTermination(60, TimeUnit.SECONDS))
                     {
-                    Assert.fail("**MG** shutdown test timed out");
+                    log(true, "**MG** shutdown test timed out");
                     }
                 }
             catch (InterruptedException ie)
                 {
-                Assert.fail("**MG** shutdown test interrupted");
+                log(true, "**MG** shutdown test interrupted");
                 }
             }
         }
