@@ -43,7 +43,6 @@ import com.tangosol.util.Converter;
 import com.tangosol.util.Daemon;
 import com.tangosol.util.ExternalizableHelper;
 import com.tangosol.util.Filter;
-import com.tangosol.util.Filters;
 import com.tangosol.util.ImmutableArrayList;
 import com.tangosol.util.InvocableMap;
 
@@ -167,7 +166,6 @@ public class ReadWriteBackingMapTests
 
         AbstractFunctionalTest._startup();
         }
-
 
     // ----- test methods ---------------------------------------------------
 
@@ -342,7 +340,7 @@ public class ReadWriteBackingMapTests
             // we expect to see either 3 individual store calls, or 1 store and 1 storeAll call
             verifyStoreStats("putWithWriteBatchFactorZero-" + sCacheName, store,
                         equal("store", 1).and(equal("storeAll", 1))
-                    .or(equal("store", 3)));
+                    .or(equal("store", 3).and(equal("storeAll", 0))));
             }
         finally
             {
@@ -599,45 +597,56 @@ public class ReadWriteBackingMapTests
         int cOwned = 0;
         int cTotal = 10;
 
-        cache.clear();
-        store.getStorageMap().clear();
-
-        String sServerName = "storage1";
-        CoherenceClusterMember clusterMember1 = startCacheServer(sServerName, "UnavailableTimeLogging", "rwbm-cache-config.xml");
-        waitForServer(clusterMember1);
-        waitForBalanced(cache.getCacheService());
-
-        for (int i = 0; i < cTotal; i++)
+        try
             {
-            boolean own = ctx.isKeyOwned(ExternalizableHelper.toBinary("Key" + i));
-            if (own)
+            cache.clear();
+            store.getStorageMap().clear();
+
+            String sServerName = "storage1";
+            CoherenceClusterMember clusterMember1 = startCacheServer(sServerName, "UnavailableTimeLogging", "rwbm-cache-config.xml");
+            waitForServer(clusterMember1);
+            waitForBalanced(cache.getCacheService());
+
+            for (int i = 0; i < cTotal; i++)
                 {
-                cache.put("Key" + i, "Failover" + i);
-                cOwned++;
+                boolean own = ctx.isKeyOwned(ExternalizableHelper.toBinary("Key" + i));
+                if (own)
+                    {
+                    cache.put("Key" + i, "Failover" + i);
+                    cOwned++;
+                    }
+                else
+                    {
+                    cache.put("Key" + i, "DontOwn" + i);
+                    }
                 }
-            else
-                {
-                cache.put("Key" + i, "DontOwn" + i);
-                }
+
+            // stop second member and check that restore/index build gets triggered for partitions coming back
+            stopCacheServer("storage1");
+            // wait for server to stop
+            Eventually.assertDeferred(() -> cache.getCacheService().getCluster().getMemberSet().size(),
+                                      Matchers.is(1), within(5, TimeUnit.MINUTES));
+
+            PartitionedService service = (PartitionedService) cache.getCacheService();
+            Member member = service.getCluster().getLocalMember();
+            // wait for re-distribution
+            Eventually.assertThat(invoking(service).getOwnedPartitions(member).cardinality(), is(nPartitions));
+
+            assertTrue(store.getStorageMap().size() == cOwned);
+
+            // wait for failover to happen
+            definiteSleep(30000);
+
+            assertTrue(store.getStorageMap().size() == cTotal);
             }
-
-        // stop second member and check that restore/index build gets triggered for partitions coming back
-        stopCacheServer("storage1");
-        // wait for server to stop
-        Eventually.assertDeferred(() -> cache.getCacheService().getCluster().getMemberSet().size(),
-                                  Matchers.is(1), within(5, TimeUnit.MINUTES));
-
-        PartitionedService service = (PartitionedService) cache.getCacheService();
-        Member member = service.getCluster().getLocalMember();
-        // wait for re-distribution
-        Eventually.assertThat(invoking(service).getOwnedPartitions(member).cardinality(), is(nPartitions));
-
-        assertTrue(store.getStorageMap().size() == cOwned);
-
-        // wait for failover to happen
-        definiteSleep(30000);
-
-        assertTrue(store.getStorageMap().size() == cTotal);
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     /**
@@ -647,13 +656,13 @@ public class ReadWriteBackingMapTests
     public void readAsyncBasic()
         {
         String sCacheName = "dist-rwbm-nonblocking";
-
         NamedCache cache = getNamedCache(sCacheName);
+        AbstractTestStore store = getStore(cache);
+        store.resetStats();
+        
         try
             {
             cache.clear();
-            AbstractTestStore store = getStore(cache);
-            store.resetStats();
 
             // prime the store contents
             Map mapContents = new HashMap();
@@ -699,6 +708,10 @@ public class ReadWriteBackingMapTests
             }
         finally
             {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
             cache.destroy();
             }
         }
@@ -717,12 +730,13 @@ public class ReadWriteBackingMapTests
         {
         String     sCacheName = "dist-rwbm-nonblocking";
         NamedCache cache      = getNamedCache(sCacheName);
+        AbstractTestStore store = getStore(cache);
+        store.resetStats();
         String     errorKey   = "Key87";
+
         try
             {
             cache.clear();
-            AbstractTestStore store = getStore(cache);
-            store.resetStats();
 
             if (!fGlobal)
                 {
@@ -754,6 +768,10 @@ public class ReadWriteBackingMapTests
             }
         finally
             {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
             cache.destroy();
             }
         }
@@ -813,20 +831,32 @@ public class ReadWriteBackingMapTests
 
         AbstractTestStore store = getStore(cache);
         ObservableMap mapStorage = store.getStorageMap();
-        mapStorage.clear();
-        store.resetStats();
-
-        // Individual puts should call store() on CacheStore
-        for (Map.Entry<String,String> entry : mapData.entrySet())
+        
+        try
             {
-            cache.put(entry.getKey(), entry.getValue());
+            mapStorage.clear();
+            store.resetStats();
+
+            // Individual puts should call store() on CacheStore
+            for (Map.Entry<String, String> entry : mapData.entrySet())
+                {
+                cache.put(entry.getKey(), entry.getValue());
+                }
+
+            // wait for async operations to finish
+            definiteSleep(10000);
+
+            verifyStoreStats("writeAsyncBasic-" + sCacheName, store, 0, mapData.size(), 0, 0, 0, 0);
+            assertThat(mapStorage.size(), is(mapData.size()));
             }
-
-        // wait for async operations to finish
-        definiteSleep(10000);
-
-        verifyStoreStats("writeAsyncBasic-" + sCacheName, store, 0, mapData.size(), 0, 0, 0, 0);
-        assertThat(mapStorage.size(), is(mapData.size()));
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     /**
@@ -849,10 +879,21 @@ public class ReadWriteBackingMapTests
         mapStorage.clear();
         store.resetStats();
 
-        // cache.putAll() should call storeAll on CacheStore
-        cache.putAll(mapData);
+        try
+            {
+            // cache.putAll() should call storeAll on CacheStore
+            cache.putAll(mapData);
 
-        Eventually.assertDeferred(mapStorage::size, is(mapData.size()));
+            Eventually.assertDeferred(mapStorage::size, is(mapData.size()));
+            }
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     /**
@@ -875,10 +916,21 @@ public class ReadWriteBackingMapTests
         mapStorage.clear();
         store.resetStats();
 
-        // cache.putAll() should call storeAll on CacheStore
-        cache.putAll(mapData);
+        try
+            {
+            // cache.putAll() should call storeAll on CacheStore
+            cache.putAll(mapData);
 
-        Eventually.assertDeferred(mapStorage::size, is(mapData.size() - 10));
+            Eventually.assertDeferred(mapStorage::size, is(mapData.size() - 10));
+            }
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     /**
@@ -914,21 +966,32 @@ public class ReadWriteBackingMapTests
         mapStorage.clear();
         store.resetStats();
 
-        if (!fGlobal)
+        try
             {
-            store.setFailureKeyStoreAll("Key32");
-            }
+            if (!fGlobal)
+                {
+                store.setFailureKeyStoreAll("Key32");
+                }
 
-        // cache.putAll() should call storeAll on CacheStore
-        cache.putAll(mapData);
+            // cache.putAll() should call storeAll on CacheStore
+            cache.putAll(mapData);
 
-        if (fGlobal)
-            {
-            Eventually.assertDeferred(mapStorage::size, is(0));
+            if (fGlobal)
+                {
+                Eventually.assertDeferred(mapStorage::size, is(0));
+                }
+            else
+                {
+                Eventually.assertDeferred(mapStorage::size, is(mapData.size() - 1));
+                }
             }
-        else
+        finally
             {
-            Eventually.assertDeferred(mapStorage::size, is(mapData.size() - 1));
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
             }
         }
 
@@ -1448,39 +1511,48 @@ public class ReadWriteBackingMapTests
 
     private void testRemoveSynthetic(String sCacheName)
         {
-        NamedCache          cache = getNamedCache(sCacheName);
-        AbstractTestStore   store = getStore(cache);
-        ReadWriteBackingMap rwbm  = getReadWriteBackingMap(cache);
-        LocalCache          mapInternal = (LocalCache) rwbm.getInternalCache();
+        NamedCache cache = getNamedCache(sCacheName);
+        AbstractTestStore store = getStore(cache);
+        ReadWriteBackingMap rwbm = getReadWriteBackingMap(cache);
+        LocalCache mapInternal = (LocalCache) rwbm.getInternalCache();
 
-        cache.clear();
-        store.getStorageMap().clear();
-        store.resetStats();
-
-        Map<Integer,Integer> map = mapOfIntegers(10);
-
-        cache.putAll(map);
-
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        assertEquals("testRemoveSynthetic-" + sCacheName, 10, mapInternal.size());
-
-        store.getStatsMap().clear();
-
-        if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+        try
             {
-            // async stores: race condition between end of putAll() and invokeAll()
-            // give a chance to storeAll() and onNext() to go through
-            definiteSleep(2000);
+            cache.clear();
+            store.getStorageMap().clear();
+            store.resetStats();
+
+            Map<Integer, Integer> map = mapOfIntegers(10);
+
+            cache.putAll(map);
+
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            assertEquals("testRemoveSynthetic-" + sCacheName, 10, mapInternal.size());
+
+            store.getStatsMap().clear();
+
+            if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+                {
+                // async stores: race condition between end of putAll() and invokeAll()
+                // give a chance to storeAll() and onNext() to go through
+                definiteSleep(2000);
+                }
+
+            cache.invokeAll(map.keySet(), new CustomProcessor11());
+
+            assertEquals("testRemoveSynthetic-" + sCacheName, 10, store.getStorageMap().size());
+            assertEquals("testRemoveSynthetic-" + sCacheName, 0, mapInternal.size());
+            // Verify no interactions with CacheStore
+            verifyStoreStats("testRemoveSynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
             }
-
-        cache.invokeAll(map.keySet(), new CustomProcessor11());
-
-        assertEquals("testRemoveSynthetic-" + sCacheName, 10, store.getStorageMap().size());
-        assertEquals("testRemoveSynthetic-" + sCacheName, 0, mapInternal.size());
-        // Verify no interactions with CacheStore
-        verifyStoreStats("testRemoveSynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
-
-        cache.destroy();
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     @Test
@@ -1498,52 +1570,61 @@ public class ReadWriteBackingMapTests
         ReadWriteBackingMap rwbm  = getReadWriteBackingMap(cache);
         LocalCache          mapInternal = (LocalCache) rwbm.getInternalCache();
 
-        cache.clear();
-        store.getStorageMap().clear();
-        store.resetStats();
+        try
+            {
+            cache.clear();
+            store.getStorageMap().clear();
+            store.resetStats();
 
-        Map<Integer,Integer> map = mapOfIntegers(10);
+            Map<Integer, Integer> map = mapOfIntegers(10);
 
-        // test invokeAll
-        cache.putAll(map);
+            // test invokeAll
+            cache.putAll(map);
 
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        store.getStatsMap().clear();
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            store.getStatsMap().clear();
 
-        cache.invokeAll(map.keySet(), new ConditionalRemove(AlwaysFilter.INSTANCE));
+            cache.invokeAll(map.keySet(), new ConditionalRemove(AlwaysFilter.INSTANCE));
 
-        assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
-        assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
-        // Verify interactions with CacheStore
-        verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
+            assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
+            assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
+            // Verify interactions with CacheStore
+            verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
 
-        // test removeAll() on keySet()
-        cache.putAll(map);
+            // test removeAll() on keySet()
+            cache.putAll(map);
 
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        store.getStatsMap().clear();
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            store.getStatsMap().clear();
 
-        cache.keySet().removeAll(map.keySet());
+            cache.keySet().removeAll(map.keySet());
 
-        assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
-        assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
-        // Verify interactions with CacheStore
-        verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
+            assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
+            assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
+            // Verify interactions with CacheStore
+            verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
 
-        // test removeAll() on entrySet()
-        cache.putAll(map);
+            // test removeAll() on entrySet()
+            cache.putAll(map);
 
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        store.getStatsMap().clear();
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            store.getStatsMap().clear();
 
-        cache.entrySet().removeAll(map.entrySet());
+            cache.entrySet().removeAll(map.entrySet());
 
-        assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
-        assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
-        // Verify interactions with CacheStore
-        verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
-
-        cache.destroy();
+            assertEquals("testRemoveAll-" + sCacheName, 0, store.getStorageMap().size());
+            assertEquals("testRemoveAll-" + sCacheName, 0, mapInternal.size());
+            // Verify interactions with CacheStore
+            verifyStoreStats("testRemoveAll-" + sCacheName, store, 0, 0, 0, 0, 0, 1);
+            }
+        finally
+            {
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
+            }
         }
 
     /**
@@ -1565,40 +1646,49 @@ public class ReadWriteBackingMapTests
         ReadWriteBackingMap rwbm  = getReadWriteBackingMap(cache);
         LocalCache          mapInternal = (LocalCache) rwbm.getInternalCache();
 
-        cache.clear();
-        store.getStorageMap().clear();
-        store.resetStats();
-
-        Map<Integer,Integer> map = mapOfIntegers(10);
-
-        cache.putAll(map);
-
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        assertEquals("testUpdateSynthetic-" + sCacheName, 10, mapInternal.size());
-
-        store.getStatsMap().clear();
-
-        if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+        try
             {
-            // async stores: race condition between end of putAll() and invokeAll()
-            // give a chance to storeAll() and onNext() to go through
-            definiteSleep(2000);
+            cache.clear();
+            store.getStorageMap().clear();
+            store.resetStats();
+
+            Map<Integer, Integer> map = mapOfIntegers(10);
+
+            cache.putAll(map);
+
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            assertEquals("testUpdateSynthetic-" + sCacheName, 10, mapInternal.size());
+
+            store.getStatsMap().clear();
+
+            if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+                {
+                // async stores: race condition between end of putAll() and invokeAll()
+                // give a chance to storeAll() and onNext() to go through
+                definiteSleep(2000);
+                }
+
+            cache.invokeAll(map.keySet(), new CustomProcessor12());
+
+            assertEquals("testUpdateSynthetic-" + sCacheName, 10, store.getStorageMap().size());
+            assertEquals("testUpdateSynthetic-" + sCacheName, 10, mapInternal.size());
+
+            for (int i = 0; i < 10; i++)
+                {
+                final int I = i;
+                Eventually.assertDeferred(() -> cache.get(I), is(-i));
+                }
+
+            verifyStoreStats("testUpdateSynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
             }
-
-        cache.invokeAll(map.keySet(), new CustomProcessor12());
-
-        assertEquals("testUpdateSynthetic-" + sCacheName, 10, store.getStorageMap().size());
-        assertEquals("testUpdateSynthetic-" + sCacheName, 10, mapInternal.size());
-
-        for (int i = 0; i < 10; i++)
+        finally
             {
-            final int I = i;
-            Eventually.assertDeferred(() -> cache.get(I), is(-i));
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
             }
-
-        verifyStoreStats("testUpdateSynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
-
-        cache.destroy();
         }
 
     /**
@@ -1620,40 +1710,49 @@ public class ReadWriteBackingMapTests
         ReadWriteBackingMap rwbm  = getReadWriteBackingMap(cache);
         LocalCache          mapInternal = (LocalCache) rwbm.getInternalCache();
 
-        cache.clear();
-        store.getStorageMap().clear();
-        store.resetStats();
-
-        Map<Integer,Integer> map = mapOfIntegers(10);
-
-        cache.putAll(map);
-
-        Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
-        assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, mapInternal.size());
-
-        store.getStatsMap().clear();
-
-        if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+        try
             {
-            // async stores: race condition between end of putAll() and invokeAll()
-            // give a chance to storeAll() and onNext() to go through
-            definiteSleep(2000);
+            cache.clear();
+            store.getStorageMap().clear();
+            store.resetStats();
+
+            Map<Integer, Integer> map = mapOfIntegers(10);
+
+            cache.putAll(map);
+
+            Eventually.assertDeferred(() -> store.getStorageMap().size(), is(map.size()));
+            assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, mapInternal.size());
+
+            store.getStatsMap().clear();
+
+            if (sCacheName.equals("dist-rwbm-nb-nonpc"))
+                {
+                // async stores: race condition between end of putAll() and invokeAll()
+                // give a chance to storeAll() and onNext() to go through
+                definiteSleep(2000);
+                }
+
+            cache.invokeAll(map.keySet(), new CustomProcessor13());
+
+            assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, store.getStorageMap().size());
+            assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, mapInternal.size());
+
+            for (int i = 0; i < 10; i++)
+                {
+                int I = i;
+                Eventually.assertDeferred(() -> cache.get(I), is(-i));
+                }
+
+            verifyStoreStats("testUpdateBinarySynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
             }
-
-        cache.invokeAll(map.keySet(), new CustomProcessor13());
-
-        assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, store.getStorageMap().size());
-        assertEquals("testUpdateBinarySynthetic-" + sCacheName, 10, mapInternal.size());
-
-        for (int i = 0; i < 10; i++)
+        finally
             {
-            int I = i;
-            Eventually.assertDeferred(() -> cache.get(I), is(-i));
+            if (store instanceof TestNonBlockingStore)
+                {
+                ((TestNonBlockingStore) store).shutdownExecutorService();
+                }
+            cache.destroy();
             }
-
-        verifyStoreStats("testUpdateBinarySynthetic-" + sCacheName, store, 0, 0, 0, 0, 0, 0);
-
-        cache.destroy();
         }
 
     /**
@@ -1767,7 +1866,6 @@ public class ReadWriteBackingMapTests
                 {
                 ((TestNonBlockingStore) store).shutdownExecutorService();
                 }
-
             cache.destroy();
             }
         }
@@ -1878,9 +1976,9 @@ public class ReadWriteBackingMapTests
             }
         finally
             {
-            if (nbStore != null)
+            if (store instanceof TestNonBlockingStore)
                 {
-                nbStore.shutdownExecutorService();
+                ((TestNonBlockingStore) store).shutdownExecutorService();
                 }
             cache.destroy();
             }
@@ -2164,7 +2262,7 @@ public class ReadWriteBackingMapTests
 
     private void testCacheStoreExpire(String sCacheName, long cExpiryMillis, boolean fUsePutAll)
         {
-        String               testName    = "testCacheStoreExpire-" + sCacheName + (fUsePutAll ? "-PutAll" : "Put");
+        String               testName    = "testCacheStoreUpdate-" + sCacheName + (fUsePutAll ? "-PutAll" : "Put");
         NamedCache           cache       = getNamedCache(sCacheName);
         TestBinaryCacheStore store       = (TestBinaryCacheStore) getStore(cache);
         ReadWriteBackingMap  rwbm        = getReadWriteBackingMap(cache);
@@ -2196,7 +2294,7 @@ public class ReadWriteBackingMapTests
                 definiteSleep(cDelay);
                 }
             assertEquals(testName, 10, store.getStorageMap().size());
-            Eventually.assertDeferred(testName, mapInternal::size, is(10));
+            assertEquals(testName, 10, mapInternal.size());
 
             definiteSleep(cExpiryMillis + 100L);
 
@@ -2428,6 +2526,19 @@ public class ReadWriteBackingMapTests
             assertTrue("failed to flush the queue within " + i + " seconds; " +
                        "pending " + cPending + " events", i < 5);
             }
+        }
+
+    /**
+    * Verifies that RWBM works with RamJournal (COH-5063).
+    */
+    @Test
+    public void testRWBMwRamJournal()
+        {
+        NamedCache cache = getNamedCache("dist-rwbm-w-ramjournal");
+
+        cache.put("foo","bar");
+        Object result = cache.get("foo");
+        assertEquals(result, "bar");
         }
 
     /**
