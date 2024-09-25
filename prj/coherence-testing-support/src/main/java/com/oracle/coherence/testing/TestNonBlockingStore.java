@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 
@@ -64,21 +65,32 @@ public class TestNonBlockingStore<K, V>
         super(mapStorage);
         }
 
-//    public ExecutorService ensureExecutorService()
-//        {
-//        if (m_executorService == null)
-//            {
-//            m_executorService = Executors.newFixedThreadPool(20);
-//            }
+    public ExecutorService ensureExecutorService()
+        {
+        if (m_executorService == null)
+            {
+            m_executorService = Executors.newFixedThreadPool(20);
+            }
 
-//        return m_executorService;
-//        }
+        return m_executorService;
+        }
 
     public void shutdownExecutorService()
         {
         if (m_executorService != null)
             {
-            m_executorService.shutdown();
+            try
+                {
+                m_executorService.shutdown();
+                if (!m_executorService.awaitTermination(60, TimeUnit.SECONDS))
+                    {
+                    Assert.fail("**MG** shutdown test timed out");
+                    }
+                }
+            catch (InterruptedException ie)
+                {
+                Assert.fail("**MG** shutdown test interrupted");
+                }
             }
         }
             
@@ -114,7 +126,7 @@ public class TestNonBlockingStore<K, V>
                     String sKey = (String) oKey;
                     if (oKey.equals("IllegalState"))
                         {
-                        new Thread(() ->
+                        ensureExecutorService().execute(() ->
                                {
                                // force close() to return before onNext
                                delay(2000);
@@ -127,7 +139,7 @@ public class TestNonBlockingStore<K, V>
                                    {
                                    getStorageMap().put(oKey, "IllegalStateException");
                                    }
-                               }).start();
+                               });
                         }
                     }
                 }
@@ -141,7 +153,7 @@ public class TestNonBlockingStore<K, V>
                 }
             }
 
-        new Thread(() ->
+        ensureExecutorService().execute(() ->
                 {
                 delay(getDurationLoad());
 
@@ -168,7 +180,7 @@ public class TestNonBlockingStore<K, V>
                    {
                    observer.onComplete();
                    }
-                }).start();
+                });
         }
 
     /**
@@ -214,7 +226,7 @@ public class TestNonBlockingStore<K, V>
                     }
                 }
 
-            new Thread(() ->
+            ensureExecutorService().execute(() ->
                        {
                        try
                            {
@@ -239,7 +251,7 @@ public class TestNonBlockingStore<K, V>
                            cEntries.decrementAndGet();
                            cEntries.notify();
                            }
-                       }).start();
+                       });
             }
 
         // Wait for all threads to complete
@@ -291,7 +303,7 @@ public class TestNonBlockingStore<K, V>
 
         logMethodInvocation("store");
 
-        new Thread(() ->
+        ensureExecutorService().execute(() ->
                 {
                 if (oValue instanceof String)
                     {
@@ -306,7 +318,7 @@ public class TestNonBlockingStore<K, V>
                 getProcessor().process(binEntry);
                 delay(200);
                 observer.onNext(binEntry);
-                }).start();
+                });
         }
 
     /**
@@ -367,7 +379,7 @@ public class TestNonBlockingStore<K, V>
                         }
                     }
 
-                new Thread(() ->
+                ensureExecutorService().execute(() ->
                         {
                         delay(getDurationStore());
                         try
@@ -384,7 +396,7 @@ public class TestNonBlockingStore<K, V>
                            {
                            observer.onError(binEntry, e);
                            }
-                        }).start();
+                        });
 
                 if (fRemove)
                     {
