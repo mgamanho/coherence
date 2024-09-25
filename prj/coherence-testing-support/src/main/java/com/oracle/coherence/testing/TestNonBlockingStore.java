@@ -68,7 +68,7 @@ public class TestNonBlockingStore<K, V>
         {
         if (m_executorService == null)
             {
-            m_executorService = Executors.newFixedThreadPool(200);
+            m_executorService = Executors.newFixedThreadPool(20);
             }
 
         return m_executorService;
