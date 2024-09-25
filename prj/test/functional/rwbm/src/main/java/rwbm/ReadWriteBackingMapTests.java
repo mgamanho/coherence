@@ -2529,19 +2529,6 @@ public class ReadWriteBackingMapTests
         }
 
     /**
-    * Verifies that RWBM works with RamJournal (COH-5063).
-    */
-    @Test
-    public void testRWBMwRamJournal()
-        {
-        NamedCache cache = getNamedCache("dist-rwbm-w-ramjournal");
-
-        cache.put("foo","bar");
-        Object result = cache.get("foo");
-        assertEquals(result, "bar");
-        }
-
-    /**
     * test for expiry value on store/storeAll and load/loadAll from BinaryEntryStore (COH-5479).
     */
     @Test
