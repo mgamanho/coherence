@@ -68,7 +68,7 @@ public class TestNonBlockingStore<K, V>
         {
         if (m_executorService == null)
             {
-            m_executorService = Executors.newFixedThreadPool(5);
+            m_executorService = Executors.newFixedThreadPool(20);
             }
 
         return m_executorService;
@@ -114,7 +114,7 @@ public class TestNonBlockingStore<K, V>
                     String sKey = (String) oKey;
                     if (oKey.equals("IllegalState"))
                         {
-                        ensureExecutorService().submit(() ->
+                        ensureExecutorService().execute(() ->
                                {
                                // force close() to return before onNext
                                delay(2000);
@@ -141,7 +141,7 @@ public class TestNonBlockingStore<K, V>
                 }
             }
 
-        ensureExecutorService().submit(() ->
+        ensureExecutorService().execute(() ->
                 {
                 delay(getDurationLoad());
 
@@ -214,7 +214,7 @@ public class TestNonBlockingStore<K, V>
                     }
                 }
 
-            ensureExecutorService().submit(() ->
+            ensureExecutorService().execute(() ->
                        {
                        try
                            {
@@ -291,7 +291,7 @@ public class TestNonBlockingStore<K, V>
 
         logMethodInvocation("store");
 
-        ensureExecutorService().submit(() ->
+        ensureExecutorService().execute(() ->
                 {
                 if (oValue instanceof String)
                     {
@@ -367,7 +367,7 @@ public class TestNonBlockingStore<K, V>
                         }
                     }
 
-                ensureExecutorService().submit(() ->
+                ensureExecutorService().execute(() ->
                         {
                         delay(getDurationStore());
                         try
