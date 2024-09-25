@@ -64,15 +64,15 @@ public class TestNonBlockingStore<K, V>
         super(mapStorage);
         }
 
-    public ExecutorService ensureExecutorService()
-        {
-        if (m_executorService == null)
-            {
-            m_executorService = Executors.newFixedThreadPool(20);
-            }
+//    public ExecutorService ensureExecutorService()
+//        {
+//        if (m_executorService == null)
+//            {
+//            m_executorService = Executors.newFixedThreadPool(20);
+//            }
 
-        return m_executorService;
-        }
+//        return m_executorService;
+//        }
 
     public void shutdownExecutorService()
         {
@@ -114,7 +114,7 @@ public class TestNonBlockingStore<K, V>
                     String sKey = (String) oKey;
                     if (oKey.equals("IllegalState"))
                         {
-                        ensureExecutorService().execute(() ->
+                        new Thread(() ->
                                {
                                // force close() to return before onNext
                                delay(2000);
@@ -127,7 +127,7 @@ public class TestNonBlockingStore<K, V>
                                    {
                                    getStorageMap().put(oKey, "IllegalStateException");
                                    }
-                               });
+                               }).start();
                         }
                     }
                 }
@@ -141,7 +141,7 @@ public class TestNonBlockingStore<K, V>
                 }
             }
 
-        ensureExecutorService().execute(() ->
+        new Thread(() ->
                 {
                 delay(getDurationLoad());
 
@@ -168,7 +168,7 @@ public class TestNonBlockingStore<K, V>
                    {
                    observer.onComplete();
                    }
-                });
+                }).start();
         }
 
     /**
@@ -214,7 +214,7 @@ public class TestNonBlockingStore<K, V>
                     }
                 }
 
-            ensureExecutorService().execute(() ->
+            new Thread(() ->
                        {
                        try
                            {
@@ -239,7 +239,7 @@ public class TestNonBlockingStore<K, V>
                            cEntries.decrementAndGet();
                            cEntries.notify();
                            }
-                       });
+                       }).start();
             }
 
         // Wait for all threads to complete
@@ -291,7 +291,7 @@ public class TestNonBlockingStore<K, V>
 
         logMethodInvocation("store");
 
-        ensureExecutorService().execute(() ->
+        new Thread(() ->
                 {
                 if (oValue instanceof String)
                     {
@@ -306,7 +306,7 @@ public class TestNonBlockingStore<K, V>
                 getProcessor().process(binEntry);
                 delay(200);
                 observer.onNext(binEntry);
-                });
+                }).start();
         }
 
     /**
@@ -367,7 +367,7 @@ public class TestNonBlockingStore<K, V>
                         }
                     }
 
-                ensureExecutorService().execute(() ->
+                new Thread(() ->
                         {
                         delay(getDurationStore());
                         try
@@ -384,7 +384,7 @@ public class TestNonBlockingStore<K, V>
                            {
                            observer.onError(binEntry, e);
                            }
-                        });
+                        }).start();
 
                 if (fRemove)
                     {
