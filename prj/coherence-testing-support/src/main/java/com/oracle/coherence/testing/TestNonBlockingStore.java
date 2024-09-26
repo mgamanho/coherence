@@ -297,7 +297,7 @@ public class TestNonBlockingStore<K, V>
     public void store(BinaryEntry<K, V> binEntry, StoreObserver<K, V> observer)
         {
         log(true, "TestNonBlockingStore store\n" + Base.getStackTrace());
-        log(true, "TestNonBlockingStore store binEntry hashcode(1): " + binEntry.hashCode());
+        log("**MG** TestNonBlockingStore store binEntry hashcode(1): " + binEntry.hashCode());
 
         Object oKey   = binEntry.getKey();
         Object oValue = binEntry.getValue();
@@ -315,12 +315,12 @@ public class TestNonBlockingStore<K, V>
                     }
 
                 log("**MG** store thread[" + Thread.currentThread().getName() + "] delay duration: " + getDurationStore());
-        log(true, "TestNonBlockingStore store binEntry hashcode(2): " + binEntry.hashCode());
+        log("**MG** TestNonBlockingStore store binEntry hashcode(2): " + binEntry.hashCode());
                 delay(getDurationStore());
                 getStorageMap().put(oKey, oValue);
                 getProcessor().process(binEntry);
                 delay(200);
-        log(true, "TestNonBlockingStore store binEntry hashcode(3): " + binEntry.hashCode());
+        log("**MG** TestNonBlockingStore store binEntry hashcode(3): " + binEntry.hashCode());
                 log("**MG** store thread[" + Thread.currentThread().getName() + "] calling onNext");
                 observer.onNext(binEntry);
                 });
