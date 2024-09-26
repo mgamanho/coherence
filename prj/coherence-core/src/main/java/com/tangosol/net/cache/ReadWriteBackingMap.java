@@ -5910,6 +5910,10 @@ public class ReadWriteBackingMap
                             mapInternal.put(binKey, binValue);
                             }
                         }
+                    else
+                        {
+                        log("**MG** replace not equals hashCodes: " + binValue.hashCode() + ":" + mapInternal.get(binKey).hashCode());
+                        }    
                     }
                 catch (RuntimeException e)
                     {
