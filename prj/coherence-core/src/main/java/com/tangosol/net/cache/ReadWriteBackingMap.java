@@ -1144,6 +1144,7 @@ public class ReadWriteBackingMap
             }
         else if (cExpiry <= CacheMap.EXPIRY_DEFAULT)
             {
+                    log("**MG** mapInternal.put(1)");
             return mapInternal.put(binKey, binValue);
             }
 
@@ -1217,6 +1218,7 @@ public class ReadWriteBackingMap
                             {
                             // set the value to BIN_ERASE_PENDING
                             queue.add(instantiateEntry(oKey, BIN_ERASE_PENDING, oValue, 0L), 0L);
+                    log("**MG** mapInternal.put(3)");
                             getInternalCache().put(oKey, BIN_ERASE_PENDING);
                             getPendingRemoves().add(oKey);
                             fQueued = true;
@@ -1602,6 +1604,7 @@ public class ReadWriteBackingMap
                     }
                 else
                     {
+                    log("**MG** mapInternal.put(2)");
                     mapInternal.put(oKey, oVal);
                     }
                 }
@@ -2804,6 +2807,7 @@ public class ReadWriteBackingMap
                     else
                         {
                         Object oValueOld = evt.getOldValue();
+                    log("**MG** mapInternal.put(4)");
                         Object oValue    = getInternalCache().put(oKey, oValueOld);
                         if (oValue != null && !equals(oValue, oValueOld))
                             {
