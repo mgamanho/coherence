@@ -316,10 +316,10 @@ public class TestNonBlockingStore<K, V>
 
                 log("**MG** store thread[" + Thread.currentThread().getName() + "] delay duration: " + getDurationStore());
         log("**MG** TestNonBlockingStore store binEntry hashcode(2): " + binEntry.getBinaryValue().hashCode());
+                delay(200);
                 delay(getDurationStore());
                 getStorageMap().put(oKey, oValue);
                 getProcessor().process(binEntry);
-                delay(200);
         log("**MG** TestNonBlockingStore store binEntry hashcode(3): " + binEntry.getBinaryValue().hashCode());
                 log("**MG** store thread[" + Thread.currentThread().getName() + "] calling onNext");
                 observer.onNext(binEntry);
