@@ -5867,6 +5867,7 @@ public class ReadWriteBackingMap
                     Binary binValue = entry.getBinaryValue();
                     if (Base.equals(binValue, mapInternal.get(binKey)))
                         {
+                        log("**MG** replace equals hashCodes: " + binValue.hashCode() + ":" + mapInternal.get(binKey).hashCode());
                         if (entry.isChanged())
                             {
                             // the store operation changed the value; replace
