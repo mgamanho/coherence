@@ -2057,7 +2057,9 @@ public class ReadWriteBackingMapTests
                 {
                 public Object process(Entry entry)
                     {
+                    CacheFactory.log("**MG** process before update: " + entry.asBinaryEntry().getBinaryValue().hashCode(), 3);
                     entry.update(new PofUpdater(Person.MOTHER_SSN), "STORED");
+                    CacheFactory.log("**MG** process after update: " + entry.asBinaryEntry().getBinaryValue().hashCode(), 3);
 
                     return null;
                     }
