@@ -297,7 +297,7 @@ public class TestNonBlockingStore<K, V>
     public void store(BinaryEntry<K, V> binEntry, StoreObserver<K, V> observer)
         {
         log(true, "TestNonBlockingStore store\n" + Base.getStackTrace());
-        log("**MG** TestNonBlockingStore store binEntry hashcode(1): " + binEntry.hashCode());
+        log("**MG** TestNonBlockingStore store binEntry hashcode(1): " + binEntry.getBinaryValue().hashCode());
 
         Object oKey   = binEntry.getKey();
         Object oValue = binEntry.getValue();
